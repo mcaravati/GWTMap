@@ -284,6 +284,7 @@ def present_summary(services, methods, count, backup):
 ##################################################
 def extract_permutations(code, code_type):
     """ Returns a List of code permutation values """
+
     if code_type.endswith(CLEAN):
         permutations, permutation_pattern = [], re.compile(
             r"unflattenKeylistIntoAnswers\(.*, ?'[A-Z0-9]{32}'\);"
@@ -297,9 +298,11 @@ def extract_permutations(code, code_type):
 
     else:
         permutation_pattern = re.compile(r"='?\"?selectingPermutation'?\"?,")
+
         for line in code:
-            if permutation_pattern.search(line):
-                return re.findall(r"([A-Z0-9]{32})", line)
+            matches = re.findall(r"([A-Z0-9]{32})", line)
+            if matches:
+                return matches
 
     return None
 
@@ -747,12 +750,21 @@ def clean_code(code, code_type):
 ##################################################
 # Validate provided resource
 ##################################################
+def classify_fragment(fragment_code):
+    frag_pattern_o = re.compile(r"^function [a-zA-Z0-9_\.\$]+\(\)\{")
+
+    if bool(frag_pattern_o.search(fragment_code)):
+        return f"{FRAGMENT}_{OBFCTD}"
+
+    # Couldn't find a clean fragment to extract a regex from :/
+    return f"{FRAGMENT}_{CLEAN}"
+
 def classify_response(response):
     """ Returns the type identifier for the provied source code """
-    bootstrap_pattern_o = re.compile(r"^function .*\(\)\{.*=\"?'?bootstrap.*=\"?'?begin")
+    bootstrap_pattern_o = re.compile(r"^function .*\(\) ?\{.*= ?[\"']begin.*?= ?[\"']bootstrap", flags=re.DOTALL)
     bootstrap_pattern_c = re.compile(r"^function [a-zA-Z0-9_\.\$]+\(\)\{")
 
-    permutation_pattern_o = re.compile(r"^[a-zA-Z0-9_\.\$]+\.onScriptDownloaded\(\[.*")
+    permutation_pattern_o = re.compile(r"[a-zA-Z0-9_\.\$]+\.onScriptLoad\(")
     permutation_pattern_c = re.compile(r"^var \$wnd = \$wnd \|\| window\.parent;")
 
     frag_pattern_o = re.compile(rf"^{R_VAR}\.runAsyncCallback.*")
@@ -760,19 +772,19 @@ def classify_response(response):
         rf"^{R_VAR}\.runAsyncCallback[0-9]+\(['\"](?:(?:\$entry)|(?:defineClass))\("
     )
 
-    if bool(bootstrap_pattern_o.match(response)):
+    if bool(bootstrap_pattern_o.search(response)):
         return f"{BOOTSTRAP}_{OBFCTD}"
-    if bool(bootstrap_pattern_c.match(response)):
+    if bool(bootstrap_pattern_c.search(response)):
         return f"{BOOTSTRAP}_{CLEAN}"
 
-    if bool(permutation_pattern_o.match(response)):
+    if bool(permutation_pattern_o.search(response)):
         return f"{PERMUTATION}_{OBFCTD}"
-    if bool(permutation_pattern_c.match(response)):
+    if bool(permutation_pattern_c.search(response)):
         return f"{PERMUTATION}_{CLEAN}"
 
-    if bool(frag_pattern_c.match(response)):
+    if bool(frag_pattern_c.search(response)):
         return f"{FRAGMENT}_{CLEAN}"
-    if bool(frag_pattern_o.match(response)):
+    if bool(frag_pattern_o.search(response)):
         return f"{FRAGMENT}_{OBFCTD}"
 
     writer(
@@ -875,7 +887,7 @@ def fetch_code(url):
             f"\nError: HTTP status {status} returned, 200 expected\n - {url}\n",
             FORMAT["ERROR"]
         )
-        sys.exit(1)
+        raise Exception()
 
     code_type = classify_response(response)
 
@@ -892,7 +904,7 @@ def append_fragments(code, code_type, args):
             if not args.code and not args.quiet:
                 writer(f"+ fragment : {frag_url}")
 
-            code_type = classify_response(response)
+            code_type = classify_fragment(response)
             code.extend(clean_code(response, code_type))
         else:
             miss += 1
@@ -904,14 +916,26 @@ def append_fragments(code, code_type, args):
 def get_permutation(code, code_type, args):
     """ Returns the code of the first enumerated browser permutation """
     global GWT_PERMUTATION
-    GWT_PERMUTATION = random.choice(extract_permutations(code, code_type))
-    target = f"{BASE_URL}{GWT_PERMUTATION}{F_SUFFIX}"
 
-    if not args.code and not args.quiet:
-        writer(f"Permutation: {target}")
+    permutations = extract_permutations(code, code_type)
 
-    code, code_type = fetch_code(target)
-    return clean_code(code, code_type)
+    for permutation in permutations:
+        GWT_PERMUTATION = permutation
+        # target = f"{BASE_URL}{GWT_PERMUTATION}{F_SUFFIX}"
+        target = f"{BASE_URL}{GWT_PERMUTATION}.cache.html"
+
+
+        if not args.code and not args.quiet:
+            writer(f"Permutation: {target}")
+
+        try:
+            code, code_type = fetch_code(target)
+        except:
+            continue
+
+        return clean_code(code, code_type)
+
+    return None
 
 ##################################################
 # Main
