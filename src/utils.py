@@ -1,0 +1,7 @@
+OBFUSCATED_VARIABLE_PATTERN = r"[a-zA-Z0-9_\.\$]+"
+PERMUTATION_PATTERN = r"[A-Z0-9]{32}"
+FRAGMENT_CALL_PATTERN = r"__gwtStartLoadingFragment\("
+STRONGNAME_PATTERN = r"var \$strongName ?= ?'([A-Z0-9]{32})';"
+GWT_VERSION_PATTERN = r"var \$gwt_version ?= ?\"([0-9.]+)\";"
+RPC_VERSION_PATTERN = r"^(?:[\t ]*)_\.(?:(?:k)|(?:version)) ?= ?([5-7]);"
+RPC_FLAGS_PATTERN = rf"^(?:[\t ]*)?{OBFUSCATED_VARIABLE_PATTERN} ?= ?([0-2]);"
